@@ -31,11 +31,33 @@ enum DynamixIcons {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let workspaceNotifications = NSWorkspace.shared.notificationCenter
+        workspaceNotifications.addObserver(self, selector: #selector(sessionResigned), name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
+        workspaceNotifications.addObserver(self, selector: #selector(sessionActivated), name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
+        workspaceNotifications.addObserver(self, selector: #selector(sessionActivated), name: NSWorkspace.didWakeNotification, object: nil)
+        NowPlayingSystemBridge.shared.start()
         MediaController.shared.start()
+        SystemVolumeMonitor.shared.start()
         OverlayController.shared.show()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        MediaController.shared.persistCurrentState()
+        NowPlayingSystemBridge.shared.stop()
+        SystemVolumeMonitor.shared.stop()
         SystemAudioMonitor.shared.stop()
+    }
+
+    @objc private func sessionResigned() {
+        MediaController.shared.persistCurrentState()
+        OverlayController.shared.setVisible(false)
+    }
+
+    @objc private func sessionActivated() {
+        MediaController.shared.refresh()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            OverlayController.shared.show()
+        }
     }
 }

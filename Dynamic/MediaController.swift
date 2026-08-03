@@ -24,13 +24,32 @@ final class MediaController: ObservableObject {
     @Published private(set) var source: PlayerSource = .none
     @Published private(set) var position: Double = 0
     @Published private(set) var duration: Double = 0
+    @Published private(set) var currentLyric = ""
 
     var hasTrack: Bool { source != .none }
     var preferredPlayer: String = UserDefaults.standard.string(forKey: "preferredPlayer") ?? "Automatic"
     private var timer: Timer?
     private var artworkTask: Task<Void, Never>?
+    private var lyricsTask: Task<Void, Never>?
+    private var lyrics: [TimedLyric] = []
+    private var lyricsTrackID = ""
+    private var consecutiveRefreshMisses = 0
 
-    private init() {}
+    private init() {
+        guard let defaults = UserDefaults(suiteName: LockscreenWidgetBridge.appGroup) else { return }
+        title = defaults.string(forKey: "nowPlaying.title") ?? title
+        artist = defaults.string(forKey: "nowPlaying.artist") ?? artist
+        album = defaults.string(forKey: "nowPlaying.album") ?? album
+        artworkURL = defaults.string(forKey: "nowPlaying.artworkURL").flatMap(URL.init(string:))
+        isPlaying = defaults.bool(forKey: "nowPlaying.isPlaying")
+        position = defaults.double(forKey: "nowPlaying.position")
+        duration = defaults.double(forKey: "nowPlaying.duration")
+        currentLyric = defaults.string(forKey: "nowPlaying.lyric") ?? ""
+        if let storedSource = defaults.string(forKey: "nowPlaying.source"),
+           let restoredSource = PlayerSource(rawValue: storedSource) {
+            source = restoredSource
+        }
+    }
 
     func start() {
         guard timer == nil else { return }
@@ -52,16 +71,24 @@ final class MediaController: ObservableObject {
 
         for candidate in candidates {
             if let state = read(source: candidate), state.hasTrack {
+                consecutiveRefreshMisses = 0
                 apply(state)
                 return
             }
         }
-        apply(.empty)
+        consecutiveRefreshMisses += 1
+        if consecutiveRefreshMisses >= 3 { apply(.empty) }
     }
 
     func togglePlayPause() { command("playpause") }
+    func play() { command("play") }
+    func pause() { command("pause") }
     func next() { command("next track") }
     func previous() { command("previous track") }
+
+    func persistCurrentState() {
+        publishCurrentState()
+    }
 
     private func command(_ command: String) {
         guard source != .none else { return }
@@ -109,11 +136,13 @@ final class MediaController: ObservableObject {
 
         guard let output = run(script), !output.isEmpty else { return nil }
         let values = output.components(separatedBy: .newlines)
-        guard values.count >= 7 else { return nil }
+        guard values.count >= 7,
+              let position = Double(values[4]),
+              let duration = Double(values[5]) else { return nil }
         return PlaybackState(
             title: values[0], artist: values[1], album: values[2],
-            artworkURL: artworkURL(from: values[3]), position: Double(values[4]) ?? 0,
-            duration: Double(values[5]) ?? 0, isPlaying: values[6].lowercased().contains("playing"), source: source
+            artworkURL: artworkURL(from: values[3]), position: position,
+            duration: duration, isPlaying: values[6].lowercased().contains("playing"), source: source
         )
     }
 
@@ -133,22 +162,79 @@ final class MediaController: ObservableObject {
     }
 
     private func apply(_ state: PlaybackState) {
+        let trackChanged = title != state.title || artist != state.artist || album != state.album || source != state.source
         let changed = title != state.title || artist != state.artist || source != state.source || isPlaying != state.isPlaying
         let artworkChanged = artworkURL != state.artworkURL
         title = state.title; artist = state.artist; album = state.album; artworkURL = state.artworkURL
         position = state.position; duration = state.duration; isPlaying = state.isPlaying; source = state.source
         if artworkChanged { updateArtworkTint(from: state.artworkURL) }
-        LockscreenWidgetBridge.publish(
-            title: state.title,
-            artist: state.artist,
-            source: state.source.displayName,
-            artworkURL: state.artworkURL,
-            isPlaying: state.isPlaying,
-            position: state.position,
-            duration: state.duration
-        )
+        if trackChanged {
+            loadLyrics()
+        } else {
+            updateCurrentLyric()
+        }
+        publishCurrentState()
         SystemAudioMonitor.shared.start(for: state.source)
         if changed { OverlayController.shared.playbackChanged(isPlaying: state.isPlaying) }
+    }
+
+    private func publishCurrentState() {
+        LockscreenWidgetBridge.publish(
+            title: title,
+            artist: artist,
+            album: album,
+            source: source.rawValue,
+            artworkURL: artworkURL,
+            isPlaying: isPlaying,
+            position: position,
+            duration: duration,
+            lyric: currentLyric,
+            lyrics: lyrics
+        )
+        NowPlayingSystemBridge.shared.publish(
+            title: title,
+            artist: artist,
+            album: album,
+            artworkURL: artworkURL,
+            isPlaying: isPlaying,
+            position: position,
+            duration: duration,
+            hasTrack: hasTrack
+        )
+    }
+
+    private func loadLyrics() {
+        lyricsTask?.cancel()
+        lyrics = []
+        currentLyric = ""
+        guard hasTrack else {
+            lyricsTrackID = ""
+            return
+        }
+
+        let trackID = "\(source.rawValue)\n\(title)\n\(artist)\n\(album)"
+        lyricsTrackID = trackID
+        let title = title
+        let artist = artist
+        let album = album
+        let duration = duration
+        lyricsTask = Task { [weak self] in
+            let result = await LyricsService.fetch(
+                title: title,
+                artist: artist,
+                album: album,
+                duration: duration
+            )
+            guard !Task.isCancelled, let self, self.lyricsTrackID == trackID else { return }
+            self.lyrics = result
+            self.updateCurrentLyric()
+            self.publishCurrentState()
+        }
+    }
+
+    private func updateCurrentLyric() {
+        let nextLine = lyrics.last { $0.time <= position + 0.15 }?.text ?? ""
+        if currentLyric != nextLine { currentLyric = nextLine }
     }
 
     private func updateArtworkTint(from url: URL?) {

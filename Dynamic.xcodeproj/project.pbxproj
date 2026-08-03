@@ -39,6 +39,16 @@
 		A10100000000000000000001 /* DynamixLockscreenWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DynamixLockscreenWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A10100000000000000000016 /* Exceptions for "DynamixLockscreenWidget" folder in "DynamixLockscreenWidget" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A10100000000000000000007 /* DynamixLockscreenWidget */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		776F4BDB301E008800F8A582 /* Dynamic */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -54,16 +64,6 @@
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
-
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		A10100000000000000000016 /* Exceptions for "DynamixLockscreenWidget" folder in "DynamixLockscreenWidget" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = A10100000000000000000007 /* DynamixLockscreenWidget */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		776F4BD6301E008800F8A582 /* Frameworks */ = {

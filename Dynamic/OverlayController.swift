@@ -2,13 +2,20 @@ import AppKit
 import Combine
 import SwiftUI
 
+fileprivate struct VolumeHUDState {
+    let level: CGFloat
+    let isMuted: Bool
+}
+
 @MainActor
 final class OverlayController: NSObject, ObservableObject {
     static let shared = OverlayController()
     private var panel: NSPanel?
     @Published fileprivate var expanded = false
     @Published fileprivate var artworkExpanded = false
+    @Published fileprivate var volumeHUD: VolumeHUDState?
     private var isVisible = false
+    private var volumeHUDTask: Task<Void, Never>?
 
     override init() {
         super.init()
@@ -51,6 +58,24 @@ final class OverlayController: NSObject, ObservableObject {
     func playbackChanged(isPlaying: Bool) {
         guard isPlaying else { return }
         show()
+    }
+
+    func showVolume(level: CGFloat, isMuted: Bool) {
+        volumeHUDTask?.cancel()
+        withAnimation(.interpolatingSpring(stiffness: 360, damping: 34)) {
+            volumeHUD = VolumeHUDState(level: min(max(level, 0), 1), isMuted: isMuted)
+        }
+        show()
+        positionPanel(animated: true)
+
+        volumeHUDTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.4))
+            guard !Task.isCancelled, let self else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                self.volumeHUD = nil
+            }
+            self.positionPanel(animated: true)
+        }
     }
 
     func toggle() {
@@ -116,8 +141,9 @@ final class OverlayController: NSObject, ObservableObject {
     private func positionPanel(animated: Bool) {
         guard let panel, let screen = NSScreen.main else { return }
         let size: NSSize
-        if artworkExpanded { size = NSSize(width: 238, height: 286) }
-        else if expanded { size = NSSize(width: 280, height: 128) }
+        if volumeHUD != nil { size = NSSize(width: 185, height: 30) }
+        else if artworkExpanded { size = NSSize(width: 238, height: 286) }
+        else if expanded { size = NSSize(width: 280, height: 158) }
         else { size = NSSize(width: 185, height: 30) }
         let frame = screen.frame
         // The compact player stays entirely inside the menu-bar strip.
@@ -139,6 +165,19 @@ private struct IslandView: View {
     @ObservedObject private var systemAudio = SystemAudioMonitor.shared
 
     var body: some View {
+        Group {
+            if let volume = controller.volumeHUD {
+                VolumeHUDView(state: volume)
+                    .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+            } else {
+                mediaIsland
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+            }
+        }
+        .animation(.interpolatingSpring(stiffness: 360, damping: 34), value: controller.volumeHUD != nil)
+    }
+
+    @ViewBuilder private var mediaIsland: some View {
         let controlsOpen = controller.expanded
         VStack(spacing: 0) {
             if controller.artworkExpanded {
@@ -147,7 +186,11 @@ private struct IslandView: View {
                         .buttonStyle(.plain)
                     Text(media.title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
                     Text(media.artist).font(.system(size: 11)).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
-                    Text("Tap the artwork to close").font(.caption2).foregroundStyle(.white.opacity(0.42))
+                    Text(media.currentLyric.isEmpty ? "Tap the artwork to close" : media.currentLyric)
+                        .font(.caption2.weight(media.currentLyric.isEmpty ? .regular : .semibold))
+                        .foregroundStyle(.white.opacity(media.currentLyric.isEmpty ? 0.42 : 0.72))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
                 }
                 .padding(14)
             } else {
@@ -187,6 +230,11 @@ private struct IslandView: View {
                         .buttonStyle(.plain).foregroundStyle(.white)
                         Text(media.source == .none ? "Waiting for music" : media.source.displayName)
                             .font(.caption2).foregroundStyle(.white.opacity(0.5))
+                        Text(media.currentLyric.isEmpty ? "Lyrics appear here when available" : media.currentLyric)
+                            .font(.system(size: 10, weight: media.currentLyric.isEmpty ? .regular : .semibold, design: .rounded))
+                            .foregroundStyle(.white.opacity(media.currentLyric.isEmpty ? 0.34 : 0.72))
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity)
                     }
                     .padding(.bottom, 11)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
@@ -214,6 +262,52 @@ private struct IslandView: View {
         .frame(width: size, height: size)
         .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: size > 30 ? 13 : 6))
         .clipShape(RoundedRectangle(cornerRadius: size > 30 ? 13 : 6))
+    }
+}
+
+private struct VolumeHUDView: View {
+    let state: VolumeHUDState
+
+    private var icon: String {
+        if state.isMuted || state.level <= 0.001 { return "speaker.slash.fill" }
+        if state.level < 0.34 { return "speaker.wave.1.fill" }
+        if state.level < 0.67 { return "speaker.wave.2.fill" }
+        return "speaker.wave.3.fill"
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 15)
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.16))
+                    Capsule()
+                        .fill(.white)
+                        .frame(width: proxy.size.width * (state.isMuted ? 0 : state.level))
+                }
+            }
+            .frame(height: 4)
+
+            Text(state.isMuted ? "MUTE" : "\(Int((state.level * 100).rounded()))%")
+                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.68))
+                .frame(width: 30, alignment: .trailing)
+                .contentTransition(.numericText())
+        }
+        .padding(.horizontal, 9)
+        .frame(width: 185, height: 30)
+        .foregroundStyle(.white)
+        .background(.black.opacity(0.97), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 19, style: .continuous)
+                .stroke(.white.opacity(0.30), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(state.isMuted ? "Muted" : "Volume \(Int((state.level * 100).rounded())) percent")
     }
 }
 
