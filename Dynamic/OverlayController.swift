@@ -151,14 +151,15 @@ final class OverlayController: NSObject, ObservableObject {
               let screen = NSScreen.main else { return false }
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return false }
-        let screenFrame = screen.frame
+        let screenSize = screen.frame.size
         return windows.contains { window in
             guard let ownerPID = window[kCGWindowOwnerPID as String] as? Int,
                   ownerPID == app.processIdentifier,
                   let layer = window[kCGWindowLayer as String] as? Int, layer == 0,
                   let bounds = window[kCGWindowBounds as String] as? [String: CGFloat] else { return false }
             let frame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
-            return frame.width >= screenFrame.width * 0.98 && frame.height >= screenFrame.height * 0.96
+            // Maximized windows still leave the menu bar or Dock visible; native fullscreen windows match the display.
+            return abs(frame.width - screenSize.width) <= 4 && abs(frame.height - screenSize.height) <= 4
         }
     }
 
