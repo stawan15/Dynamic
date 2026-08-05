@@ -17,8 +17,8 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 60
     env:
-      DERIVED_DATA_PATH: ${{ runner.temp }}/DerivedData
-      PACKAGE_PATH: ${{ runner.temp }}/SourcePackages
+      DERIVED_DATA_PATH: ${{ github.workspace }}/build/DerivedData
+      PACKAGE_PATH: ${{ github.workspace }}/build/SourcePackages
       DIST_PATH: ${{ github.workspace }}/dist
 
     steps:
