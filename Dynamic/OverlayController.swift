@@ -16,7 +16,9 @@ final class OverlayController: NSObject, ObservableObject {
     @Published fileprivate var artworkExpanded = false
     @Published fileprivate var volumeHUD: VolumeHUDState?
     private var isVisible = false
+    private var hiddenForFullscreen = false
     private var volumeHUDTask: Task<Void, Never>?
+    private var fullscreenRecheckTask: Task<Void, Never>?
 
     override init() {
         super.init()
@@ -26,32 +28,42 @@ final class OverlayController: NSObject, ObservableObject {
     func show() {
         guard UserDefaults.standard.object(forKey: "islandEnabled") as? Bool ?? true else { return }
         if panel == nil { createPanel() }
-        guard !anotherAppIsFullscreen else { return }
+        guard !anotherAppIsFullscreen else {
+            hiddenForFullscreen = true
+            scheduleFullscreenRechecks()
+            return
+        }
+        hiddenForFullscreen = false
         positionPanel(animated: false)
         panel?.orderFrontRegardless()
-        if !isVisible, let panel {
+        if (!isVisible || panel?.isVisible == false), let panel {
             panel.alphaValue = 0
+            isVisible = true
             NSAnimationContext.runAnimationGroup {
                 $0.duration = 0.28
                 $0.timingFunction = CAMediaTimingFunction(controlPoints: 0.20, 0.85, 0.25, 1.0)
                 panel.animator().alphaValue = 1
             }
+        } else {
+            isVisible = true
         }
-        isVisible = true
     }
 
     func setVisible(_ visible: Bool) {
         if visible {
             show()
-        } else if let panel, isVisible {
+        } else if let panel, isVisible || panel.isVisible {
+            isVisible = false
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = 0.22
                 context.timingFunction = CAMediaTimingFunction(controlPoints: 0.35, 0, 0.65, 1)
                 panel.animator().alphaValue = 0
-            }, completionHandler: {
-                panel.orderOut(nil)
-                panel.alphaValue = 1
+            }, completionHandler: { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.completeHide()
+                }
             })
+        } else {
             isVisible = false
         }
     }
@@ -96,15 +108,40 @@ final class OverlayController: NSObject, ObservableObject {
     }
 
     func toggleVisibility() {
-        setVisible(!isVisible)
+        let currentlyShown = isVisible && panel?.isVisible == true && (panel?.alphaValue ?? 0) > 0.01
+        setVisible(!currentlyShown)
+    }
+
+    private func completeHide() {
+        guard !isVisible else { return }
+        panel?.orderOut(nil)
+        panel?.alphaValue = 1
     }
 
     @objc private func spaceChanged() {
+        updateFullscreenVisibility()
+        scheduleFullscreenRechecks()
+    }
+
+    private func updateFullscreenVisibility() {
         if anotherAppIsFullscreen {
-            panel?.orderOut(nil)
-            isVisible = false
-        } else if UserDefaults.standard.object(forKey: "islandEnabled") as? Bool ?? true {
+            hiddenForFullscreen = isVisible || hiddenForFullscreen
+            setVisible(false)
+        } else if hiddenForFullscreen {
+            hiddenForFullscreen = false
             show()
+        }
+    }
+
+    private func scheduleFullscreenRechecks() {
+        fullscreenRecheckTask?.cancel()
+        fullscreenRecheckTask = Task { [weak self] in
+            // Space-change notifications can arrive before the window server finishes its transition.
+            for delay in [0.25, 0.5, 1.0, 2.0] {
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled, let self else { return }
+                self.updateFullscreenVisibility()
+            }
         }
     }
 

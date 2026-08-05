@@ -28,6 +28,8 @@
 	<string>Dynamix uses system audio only to animate the Now Playing waveform.</string>
 	<key>SUFeedURL</key>
 	<string>https://github.com/stawan15/Dynamic/releases/latest/download/appcast.xml</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>21600</integer>
 	<key>SUPublicEDKey</key>
 	<string>nkZTEtIT1miXFYUvn/NinL0RdckIUQuMYHd5hPTrVbc=</string>
 </dict>
