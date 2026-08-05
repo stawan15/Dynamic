@@ -13,7 +13,7 @@ struct DynamicApp: App {
 
     var body: some Scene {
         Settings {
-            ContentView(media: media)
+            ContentView(media: media, updater: updaterController.updater)
         }
 
         MenuBarExtra {
@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NowPlayingSystemBridge.shared.start()
         MediaController.shared.start()
         SystemVolumeMonitor.shared.start()
+        GlobalShortcutManager.shared.start()
         OverlayController.shared.show()
     }
 
@@ -53,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NowPlayingSystemBridge.shared.stop()
         SystemVolumeMonitor.shared.stop()
         SystemAudioMonitor.shared.stop()
+        GlobalShortcutManager.shared.stop()
     }
 
     @objc private func sessionResigned() {

@@ -139,6 +139,10 @@ final class SystemAudioMonitor: NSObject, ObservableObject {
         level = 0
         status = "System audio stopped"
     }
+
+    var diagnostics: String {
+        "Audio capture: \(isCapturing)\nAudio status: \(status)\nCaptured player: \(capturedBundleID ?? "None")\nAudio level: \(String(format: "%.3f", level))"
+    }
 }
 
 private func defaultOutputDeviceUID() -> String? {

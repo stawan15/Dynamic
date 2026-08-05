@@ -25,6 +25,7 @@ final class MediaController: ObservableObject {
     @Published private(set) var position: Double = 0
     @Published private(set) var duration: Double = 0
     @Published private(set) var currentLyric = ""
+    @Published private(set) var lastAutomationError = "None"
 
     var hasTrack: Bool { source != .none }
     var preferredPlayer: String = UserDefaults.standard.string(forKey: "preferredPlayer") ?? "Automatic"
@@ -148,7 +149,17 @@ final class MediaController: ObservableObject {
 
     private func run(_ source: String) -> String? {
         var error: NSDictionary?
-        return NSAppleScript(source: source)?.executeAndReturnError(&error).stringValue
+        let result = NSAppleScript(source: source)?.executeAndReturnError(&error).stringValue
+        if let error {
+            let number = error[NSAppleScript.errorNumber] as? Int ?? 0
+            let message = error[NSAppleScript.errorMessage] as? String ?? "Unknown AppleScript error"
+            lastAutomationError = "\(number): \(message)"
+        }
+        return result
+    }
+
+    var diagnostics: String {
+        "Player: \(source.displayName)\nTrack available: \(hasTrack)\nPlaying: \(isPlaying)\nTrack: \(title) — \(artist)\nLast Automation error: \(lastAutomationError)"
     }
 
     private func artworkURL(from value: String) -> URL? {

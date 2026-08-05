@@ -1,15 +1,23 @@
 import AppKit
+import Sparkle
 import SwiftUI
 
 @MainActor
 struct ContentView: View {
     @ObservedObject var media: MediaController
     @ObservedObject private var systemAudio = SystemAudioMonitor.shared
+    @ObservedObject private var launchAtLogin = LaunchAtLoginController.shared
+    @ObservedObject private var shortcuts = GlobalShortcutManager.shared
     @AppStorage("islandEnabled") private var islandEnabled = true
     @AppStorage("preferredPlayer") private var preferredPlayer = "Automatic"
+    @AppStorage(GlobalShortcutManager.enabledKey) private var shortcutsEnabled = true
+    @AppStorage(GlobalShortcutManager.presetKey) private var shortcutPreset = ShortcutPreset.commandOptionD.rawValue
 
-    init(media: MediaController) {
+    private let updater: SPUUpdater
+
+    init(media: MediaController, updater: SPUUpdater) {
         self.media = media
+        self.updater = updater
     }
 
     var body: some View {
@@ -23,13 +31,17 @@ struct ContentView: View {
                     header
                     nowPlayingCard
                     islandCard
-                    audioCard
-                    setupCard
+                    startupCard
+                    updateCard
+                    shortcutCard
+                    displayCard
+                    permissionCard
+                    diagnosticsCard
                 }
                 .padding(22)
             }
         }
-        .frame(width: 500, height: 680)
+        .frame(width: 500, height: 720)
         .preferredColorScheme(.dark)
     }
 
@@ -67,10 +79,15 @@ struct ContentView: View {
                     .foregroundStyle(.white.opacity(0.48))
             }
             Spacer()
-            Circle()
-                .fill(media.isPlaying ? media.artworkTint : .white.opacity(0.18))
-                .frame(width: 9, height: 9)
-                .shadow(color: media.artworkTint.opacity(0.8), radius: media.isPlaying ? 6 : 0)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("v\(appVersion)")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.6))
+                Circle()
+                    .fill(media.isPlaying ? media.artworkTint : .white.opacity(0.18))
+                    .frame(width: 9, height: 9)
+                    .shadow(color: media.artworkTint.opacity(0.8), radius: media.isPlaying ? 6 : 0)
+            }
         }
     }
 
@@ -168,86 +185,311 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                 }
             }
-        }
-        .signalCard(tint: media.artworkTint)
-    }
 
-    private var audioCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("AUDIO PULSE", systemImage: "waveform")
-                    .font(.system(size: 10, weight: .bold)).tracking(1.2)
-                    .foregroundStyle(.white.opacity(0.58))
+                Button("Reset Position") { OverlayController.shared.resetOverlay() }
+                    .font(.system(size: 11, weight: .semibold))
+                    .buttonStyle(.bordered)
+                    .tint(media.artworkTint)
                 Spacer()
-                Text(systemAudio.isCapturing ? "CONNECTED" : "OFFLINE")
-                    .font(.system(size: 9, weight: .bold)).tracking(1)
-                    .foregroundStyle(systemAudio.isCapturing ? .green : .orange)
-            }
-            HStack(spacing: 10) {
-                Capsule().fill(media.artworkTint).frame(width: max(6, systemAudio.level * 130), height: 7)
-                Text(systemAudio.status)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .lineLimit(1)
-                Spacer()
-                Button("Reconnect") { systemAudio.reconnect(for: media.source) }
-                    .font(.system(size: 11, weight: .bold))
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(media.artworkTint)
-            }
-        }
-        .signalCard(tint: media.artworkTint)
-    }
-
-    private var setupCard: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            HStack {
-                Label("SETUP GUIDE", systemImage: "checklist")
-                    .font(.system(size: 10, weight: .bold))
-                    .tracking(1.2)
-                    .foregroundStyle(.white.opacity(0.58))
-                Spacer()
-                Text("ONE-TIME")
-                    .font(.system(size: 9, weight: .bold))
-                    .tracking(1)
-                    .foregroundStyle(media.artworkTint)
-            }
-
-            setupStep(number: "1", title: "Play music", detail: "Open Spotify or Apple Music and start a track.")
-            setupStep(number: "2", title: "Enable Audio Pulse", detail: "Press Reconnect above, then allow System Audio when macOS asks.")
-            setupStep(number: "3", title: "Allow playback control", detail: "Approve Automation if macOS asks to control your player.")
-            setupStep(number: "4", title: "Add the Lock Screen widget", detail: "Right-click the desktop → Edit Widgets → Dynamix → Now Playing.")
-
-            HStack(spacing: 10) {
-                Button("Open Privacy Settings") {
-                    guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") else { return }
-                    NSWorkspace.shared.open(url)
-                }
-                .buttonStyle(.bordered)
-                .tint(media.artworkTint)
-
-                Spacer()
-
-                Text("Dynamix stays hidden in fullscreen.")
-                    .font(.system(size: 10, weight: .medium))
+                Text("Moves the island back to default spot")
+                    .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.40))
             }
         }
         .signalCard(tint: media.artworkTint)
     }
 
-    private func setupStep(number: String, title: String, detail: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text(number)
-                .font(.system(size: 10, weight: .bold, design: .rounded))
-                .foregroundStyle(.black)
-                .frame(width: 18, height: 18)
-                .background(media.artworkTint, in: Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 12, weight: .semibold))
-                Text(detail).font(.system(size: 10)).foregroundStyle(.white.opacity(0.48))
+    private var startupCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("STARTUP", systemImage: "power")
+                .font(.system(size: 10, weight: .bold)).tracking(1.2)
+                .foregroundStyle(.white.opacity(0.58))
+
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Launch at login").font(.system(size: 14, weight: .semibold))
+                    Text("Start Dynamix automatically when you sign in").font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { launchAtLogin.isEnabled },
+                    set: { launchAtLogin.setEnabled($0) }
+                ))
+                .labelsHidden()
+                .tint(media.artworkTint)
+            }
+
+            Text(launchAtLogin.status)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.55))
+        }
+        .signalCard(tint: media.artworkTint)
+    }
+
+    private var updateCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("UPDATES", systemImage: "arrow.triangle.2.circlepath")
+                .font(.system(size: 10, weight: .bold)).tracking(1.2)
+                .foregroundStyle(.white.opacity(0.58))
+
+            Toggle("Check for updates automatically", isOn: Binding(
+                get: { updater.automaticallyChecksForUpdates },
+                set: { updater.automaticallyChecksForUpdates = $0 }
+            ))
+            .font(.system(size: 13, weight: .medium))
+            .tint(media.artworkTint)
+
+            Toggle("Download updates automatically", isOn: Binding(
+                get: { updater.automaticallyDownloadsUpdates },
+                set: { updater.automaticallyDownloadsUpdates = $0 }
+            ))
+            .font(.system(size: 13, weight: .medium))
+            .tint(media.artworkTint)
+            .disabled(!updater.automaticallyChecksForUpdates)
+
+            HStack {
+                Text("Check interval").font(.system(size: 13, weight: .medium))
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { intervalTag(for: updater.updateCheckInterval) },
+                    set: { updater.updateCheckInterval = interval(for: $0) }
+                )) {
+                    Text("Every 6 hours").tag(21600)
+                    Text("Hourly").tag(3600)
+                    Text("Daily").tag(86400)
+                    Text("Weekly").tag(604800)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .disabled(!updater.automaticallyChecksForUpdates)
+            }
+
+            HStack {
+                Text("Last check: \(lastCheckText)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.45))
+                Spacer()
+                Button("Check Now…", action: updater.checkForUpdates)
+                    .font(.system(size: 11, weight: .bold))
+                    .buttonStyle(.bordered)
+                    .tint(media.artworkTint)
             }
         }
+        .signalCard(tint: media.artworkTint)
+    }
+
+    private var shortcutCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("GLOBAL SHORTCUTS", systemImage: "command")
+                .font(.system(size: 10, weight: .bold)).tracking(1.2)
+                .foregroundStyle(.white.opacity(0.58))
+
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Media hotkeys").font(.system(size: 14, weight: .semibold))
+                    Text("Toggle island & control playback anywhere").font(.system(size: 11)).foregroundStyle(.white.opacity(0.45))
+                }
+                Spacer()
+                Toggle("", isOn: $shortcutsEnabled)
+                    .labelsHidden()
+                    .tint(media.artworkTint)
+                    .onChange(of: shortcutsEnabled) { _, enabled in
+                        shortcuts.setEnabled(enabled)
+                    }
+            }
+
+            HStack {
+                Text("Toggle island").font(.system(size: 13, weight: .medium))
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { ShortcutPreset(rawValue: shortcutPreset) ?? .commandOptionD },
+                    set: { preset in
+                        shortcutPreset = preset.rawValue
+                        shortcuts.setPreset(preset)
+                    }
+                )) {
+                    ForEach(ShortcutPreset.allCases) { preset in
+                        Text(preset.label).tag(preset)
+                    }
+                }
+                .labelsHidden()
+                .disabled(!shortcutsEnabled)
+            }
+
+            HStack(spacing: 6) {
+                Text("⌃⌥Space")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(.white.opacity(0.08), in: Capsule())
+                Text("play/pause").font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+                Spacer()
+                Text("⌃⌥←/→")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(.white.opacity(0.08), in: Capsule())
+                Text("prev/next").font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+            }
+
+            HStack(spacing: 6) {
+                Text("⌃⌥↑")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(.white.opacity(0.08), in: Capsule())
+                Text("expand/collapse island").font(.system(size: 10)).foregroundStyle(.white.opacity(0.45))
+                Spacer()
+            }
+
+            Text(shortcuts.status)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.55))
+        }
+        .signalCard(tint: media.artworkTint)
+    }
+
+    private var displayCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("DISPLAY", systemImage: "display")
+                .font(.system(size: 10, weight: .bold)).tracking(1.2)
+                .foregroundStyle(.white.opacity(0.58))
+
+            HStack {
+                Text("Show island on").font(.system(size: 13, weight: .medium))
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { UserDefaults.standard.integer(forKey: OverlayController.preferredDisplayKey) },
+                    set: { newValue in
+                        UserDefaults.standard.set(newValue, forKey: OverlayController.preferredDisplayKey)
+                        OverlayController.shared.selectDisplay(UInt32(newValue))
+                    }
+                )) {
+                    Text("Automatic (main)").tag(0)
+                    ForEach(DisplayOption.available) { display in
+                        Text(display.name).tag(Int(display.id))
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: 220)
+            }
+        }
+        .signalCard(tint: media.artworkTint)
+    }
+
+    private var permissionCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("PERMISSIONS", systemImage: "lock.shield")
+                .font(.system(size: 10, weight: .bold)).tracking(1.2)
+                .foregroundStyle(.white.opacity(0.58))
+
+            permissionRow(
+                name: "Spotify control",
+                permission: AutomationPermission.status(forBundleIdentifier: "com.spotify.client")
+            )
+            permissionRow(
+                name: "Apple Music control",
+                permission: AutomationPermission.status(forBundleIdentifier: "com.apple.Music")
+            )
+            permissionRow(
+                name: "System audio",
+                permission: systemAudio.isCapturing ? .allowed : systemAudio.status.contains("not") ? .denied : .notDetermined
+            )
+
+            Button("Open Privacy Settings") {
+                guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") else { return }
+                NSWorkspace.shared.open(url)
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .buttonStyle(.bordered)
+            .tint(media.artworkTint)
+        }
+        .signalCard(tint: media.artworkTint)
+    }
+
+    private func permissionRow(name: String, permission: AutomationPermission) -> some View {
+        HStack {
+            Text(name).font(.system(size: 13, weight: .medium))
+            Spacer()
+            Text(permission.rawValue)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(permission == .allowed ? .green : permission == .denied ? .red : .orange)
+        }
+    }
+
+    private var diagnosticsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("DIAGNOSTICS", systemImage: "stethoscope")
+                .font(.system(size: 10, weight: .bold)).tracking(1.2)
+                .foregroundStyle(.white.opacity(0.58))
+
+            Text(diagnosticsText)
+                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.55))
+                .lineLimit(5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 10) {
+                Button("Export Log") { exportDiagnostics() }
+                    .font(.system(size: 11, weight: .semibold))
+                    .buttonStyle(.bordered)
+                    .tint(media.artworkTint)
+                Text("Writes a diagnostic report you can share")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white.opacity(0.40))
+            }
+        }
+        .signalCard(tint: media.artworkTint)
+    }
+
+    private var appVersion: String {
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
+        return "\(short) (\(build))"
+    }
+
+    private var lastCheckText: String {
+        guard let date = updater.lastUpdateCheckDate else { return "Never" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    private func intervalTag(for seconds: TimeInterval) -> Int {
+        switch seconds {
+        case ..<10800: return 3600
+        case 10800..<43200: return 21600
+        case 43200..<259200: return 86400
+        default: return 604800
+        }
+    }
+
+    private func interval(for tag: Int) -> TimeInterval {
+        TimeInterval(tag)
+    }
+
+    private var diagnosticsText: String {
+        [
+            media.diagnostics,
+            OverlayController.shared.diagnostics,
+            systemAudio.diagnostics,
+            SystemVolumeMonitor.shared.diagnostics,
+            "Launch at login: \(launchAtLogin.status)",
+            "Shortcuts: \(shortcuts.status)"
+        ].joined(separator: "\n")
+    }
+
+    private func exportDiagnostics() {
+        let body = [
+            "Dynamix Diagnostic Report",
+            "Version: \(appVersion)",
+            "Date: \(ISO8601DateFormatter().string(from: Date()))",
+            "========================",
+            diagnosticsText
+        ].joined(separator: "\n")
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Dynamix-Diagnostics-\(Int(Date().timeIntervalSince1970)).txt")
+        try? body.write(to: url, atomically: true, encoding: .utf8)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 }
 
@@ -261,5 +503,9 @@ private extension View {
 }
 
 #Preview {
-    ContentView(media: .shared)
+    ContentView(media: .shared, updater: SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    ).updater)
 }

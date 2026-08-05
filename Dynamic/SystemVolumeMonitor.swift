@@ -25,6 +25,12 @@ final class SystemVolumeMonitor: NSObject {
         timer = nil
     }
 
+    var diagnostics: String {
+        let volumeText = volume.map { String(format: "%.2f", $0) } ?? "Unavailable"
+        let muteText = isMuted.map(String.init) ?? "Unavailable"
+        return "Volume monitor: \(timer == nil ? "Stopped" : "Running")\nOutput device ID: \(deviceID)\nVolume: \(volumeText)\nMuted: \(muteText)"
+    }
+
     @objc private func timerFired(_ timer: Timer) {
         refresh(showHUD: true)
     }

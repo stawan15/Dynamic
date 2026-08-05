@@ -11,6 +11,7 @@ fileprivate struct VolumeHUDState {
 @MainActor
 final class OverlayController: NSObject, ObservableObject {
     static let shared = OverlayController()
+    static let preferredDisplayKey = "preferredDisplayID"
     private var panel: NSPanel?
     @Published fileprivate var expanded = false
     @Published fileprivate var artworkExpanded = false
@@ -23,6 +24,7 @@ final class OverlayController: NSObject, ObservableObject {
     override init() {
         super.init()
         NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(spaceChanged), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(screenConfigurationChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
 
     func show() {
@@ -112,6 +114,36 @@ final class OverlayController: NSObject, ObservableObject {
         setVisible(!currentlyShown)
     }
 
+    func lyricChanged() {
+        guard expanded || artworkExpanded else { return }
+        positionPanel(animated: false)
+    }
+
+    func selectDisplay(_ displayID: UInt32?) {
+        if let displayID {
+            UserDefaults.standard.set(Int(displayID), forKey: Self.preferredDisplayKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.preferredDisplayKey)
+        }
+        positionPanel(animated: false)
+        if isVisible { panel?.orderFrontRegardless() }
+    }
+
+    func resetOverlay() {
+        UserDefaults.standard.removeObject(forKey: Self.preferredDisplayKey)
+        volumeHUDTask?.cancel()
+        volumeHUD = nil
+        expanded = false
+        artworkExpanded = false
+        hiddenForFullscreen = false
+        show()
+    }
+
+    var diagnostics: String {
+        let frame = panel?.frame.debugDescription ?? "not created"
+        return "Overlay visible: \(isVisible)\nOverlay fullscreen-suppressed: \(hiddenForFullscreen)\nOverlay display: \(selectedScreen?.localizedName ?? "Unavailable")\nOverlay frame: \(frame)"
+    }
+
     private func completeHide() {
         guard !isVisible else { return }
         panel?.orderOut(nil)
@@ -121,6 +153,10 @@ final class OverlayController: NSObject, ObservableObject {
     @objc private func spaceChanged() {
         updateFullscreenVisibility()
         scheduleFullscreenRechecks()
+    }
+
+    @objc private func screenConfigurationChanged() {
+        positionPanel(animated: false)
     }
 
     private func updateFullscreenVisibility() {
@@ -148,10 +184,11 @@ final class OverlayController: NSObject, ObservableObject {
     private var anotherAppIsFullscreen: Bool {
         guard let app = NSWorkspace.shared.frontmostApplication,
               app.bundleIdentifier != Bundle.main.bundleIdentifier,
-              let screen = NSScreen.main else { return false }
+              let screen = selectedScreen,
+              let displayID = displayID(for: screen) else { return false }
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let windows = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return false }
-        let screenSize = screen.frame.size
+        let displayBounds = CGDisplayBounds(displayID)
         return windows.contains { window in
             guard let ownerPID = window[kCGWindowOwnerPID as String] as? Int,
                   ownerPID == app.processIdentifier,
@@ -159,8 +196,24 @@ final class OverlayController: NSObject, ObservableObject {
                   let bounds = window[kCGWindowBounds as String] as? [String: CGFloat] else { return false }
             let frame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
             // Maximized windows still leave the menu bar or Dock visible; native fullscreen windows match the display.
-            return abs(frame.width - screenSize.width) <= 4 && abs(frame.height - screenSize.height) <= 4
+            return abs(frame.minX - displayBounds.minX) <= 4 &&
+                abs(frame.minY - displayBounds.minY) <= 4 &&
+                abs(frame.width - displayBounds.width) <= 4 &&
+                abs(frame.height - displayBounds.height) <= 4
         }
+    }
+
+    private var selectedScreen: NSScreen? {
+        let preferredID = UInt32(UserDefaults.standard.integer(forKey: Self.preferredDisplayKey))
+        if preferredID != 0,
+           let screen = NSScreen.screens.first(where: { displayID(for: $0) == preferredID }) {
+            return screen
+        }
+        return NSScreen.main ?? NSScreen.screens.first
+    }
+
+    private func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
     }
 
     private func createPanel() {
@@ -178,11 +231,11 @@ final class OverlayController: NSObject, ObservableObject {
     }
 
     private func positionPanel(animated: Bool) {
-        guard let panel, let screen = NSScreen.main else { return }
+        guard let panel, let screen = selectedScreen else { return }
         let size: NSSize
         if volumeHUD != nil { size = NSSize(width: 185, height: 30) }
-        else if artworkExpanded { size = NSSize(width: 238, height: 286) }
-        else if expanded { size = NSSize(width: 280, height: 158) }
+        else if artworkExpanded { size = NSSize(width: 238, height: estimatedArtworkHeight()) }
+        else if expanded { size = NSSize(width: 280, height: estimatedExpandedHeight()) }
         else { size = NSSize(width: 185, height: 30) }
         let frame = screen.frame
         // The compact player stays entirely inside the menu-bar strip.
@@ -195,6 +248,30 @@ final class OverlayController: NSObject, ObservableObject {
                 panel.animator().setFrame(target, display: true)
             }
         } else { update() }
+    }
+
+    private func estimatedExpandedHeight() -> CGFloat {
+        let width: CGFloat = 280 - 24
+        let lines = CGFloat(lyricLineCount(font: .systemFont(ofSize: 10, weight: .semibold), width: width))
+        return 158 + max(0, lines - 1) * 13
+    }
+
+    private func estimatedArtworkHeight() -> CGFloat {
+        let width: CGFloat = 238 - 28
+        let lines = CGFloat(lyricLineCount(font: .systemFont(ofSize: 11, weight: .semibold), width: width))
+        return 286 + max(0, lines - 2) * 14
+    }
+
+    private func lyricLineCount(font: NSFont, width: CGFloat) -> Int {
+        let text = MediaController.shared.currentLyric
+        guard !text.isEmpty else { return 1 }
+        let bounds = (text as NSString).boundingRect(
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font]
+        )
+        let lineHeight = font.ascender - font.descender + font.leading
+        return max(1, Int(ceil(bounds.height / lineHeight)))
     }
 }
 
@@ -230,6 +307,8 @@ private struct IslandView: View {
                         .foregroundStyle(.white.opacity(media.currentLyric.isEmpty ? 0.42 : 0.72))
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity)
                 }
                 .padding(14)
             } else {
@@ -272,7 +351,8 @@ private struct IslandView: View {
                         Text(media.currentLyric.isEmpty ? "Lyrics appear here when available" : media.currentLyric)
                             .font(.system(size: 10, weight: media.currentLyric.isEmpty ? .regular : .semibold, design: .rounded))
                             .foregroundStyle(.white.opacity(media.currentLyric.isEmpty ? 0.34 : 0.72))
-                            .lineLimit(1)
+                            .lineLimit(2)
+                            .truncationMode(.tail)
                             .frame(maxWidth: .infinity)
                     }
                     .padding(.bottom, 11)
@@ -285,6 +365,7 @@ private struct IslandView: View {
         .overlay { RoundedRectangle(cornerRadius: controller.expanded ? 21 : 19, style: .continuous).stroke(.white.opacity(0.30), lineWidth: 0.5) }
         .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .onTapGesture { controller.toggle() }
+        .onChange(of: media.currentLyric) { controller.lyricChanged() }
         .animation(.interpolatingSpring(stiffness: 340, damping: 32), value: controller.expanded)
         .animation(.interpolatingSpring(stiffness: 340, damping: 32), value: controller.artworkExpanded)
     }
@@ -373,6 +454,7 @@ private struct PlaybackWaveform: View {
 }
 
 struct MenuBarView: View {
+    @Environment(\.openSettings) private var openSettings
     @ObservedObject var media: MediaController
     let updater: SPUUpdater
 
@@ -383,8 +465,15 @@ struct MenuBarView: View {
         Button("Next Track") { media.next() }
         Button("Show / Hide Island") { OverlayController.shared.toggleVisibility() }
         Divider()
-        SettingsLink {
-            Text("Settings…")
+        Button("Settings…") {
+            openSettings()
+            Task { @MainActor in
+                await Task.yield()
+                NSApplication.shared.activate()
+                NSApplication.shared.windows
+                    .first(where: { $0.canBecomeKey && !($0 is NSPanel) })?
+                    .makeKeyAndOrderFront(nil)
+            }
         }
         CheckForUpdatesView(updater: updater)
         Divider()

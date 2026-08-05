@@ -75,6 +75,22 @@ jobs:
             "$DERIVED_DATA_PATH/Build/Products/Release/Dynamix.app" \
             "$dmg_path"
 
+      - name: Generate release notes
+        run: |
+          previous_tag="$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)"
+          {
+            echo "# Dynamix $VERSION"
+            echo ""
+            if [[ -n "$previous_tag" ]]; then
+              echo "**Changes since $previous_tag:**"
+              echo ""
+              git log --oneline --no-decorate "$previous_tag..$GITHUB_REF_NAME"
+            else
+              echo "Initial release."
+            fi
+          } > "$DIST_PATH/RELEASE_NOTES.md"
+          cat "$DIST_PATH/RELEASE_NOTES.md"
+
       - name: Generate signed appcast
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
@@ -83,6 +99,7 @@ jobs:
           echo "$SPARKLE_PRIVATE_KEY" | "$sparkle_bin/generate_appcast" \
             --ed-key-file - \
             --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/" \
+            --release-notes-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/RELEASE_NOTES.md" \
             --maximum-deltas 0 \
             --link "https://github.com/$GITHUB_REPOSITORY" \
             -o "$DIST_PATH/appcast.xml" \
@@ -101,7 +118,8 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             "$DIST_PATH/Dynamix-$VERSION.dmg" \
             "$DIST_PATH/appcast.xml" \
+            "$DIST_PATH/RELEASE_NOTES.md" \
             --title "Dynamix $VERSION" \
-            --generate-notes \
+            --notes-file "$DIST_PATH/RELEASE_NOTES.md" \
             --verify-tag \
             --latest
