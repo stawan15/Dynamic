@@ -88,7 +88,10 @@ final class SystemAudioMonitor: NSObject, ObservableObject {
             return
         }
 
-        let levelHandler: @Sendable (CGFloat) -> Void = { [weak self] value in
+        let throttle = LevelUpdateThrottle()
+        let levelHandler: @Sendable (CGFloat) -> Void = { [weak self, throttle] value in
+            // Cap main-thread updates to ~60fps so the island doesn't redraw every audio buffer.
+            guard throttle.shouldDispatch() else { return }
             DispatchQueue.main.async {
                 guard let self else { return }
                 let target = min(value * 4.0, 1)
@@ -229,4 +232,20 @@ private func rmsLevel(from audioBufferList: UnsafePointer<AudioBufferList>, form
         }
     }
     return count > 0 ? CGFloat(sqrt(sum / Float(count))) : 0
+}
+
+/// Gates how often audio-level updates are dispatched to the main thread so the
+/// SwiftUI island isn't invalidated more often than the display can refresh.
+nonisolated final class LevelUpdateThrottle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lastDispatchTime: CFTimeInterval = 0
+
+    func shouldDispatch() -> Bool {
+        let now = CACurrentMediaTime()
+        lock.lock()
+        defer { lock.unlock() }
+        guard now - lastDispatchTime >= 1.0 / 60.0 else { return false }
+        lastDispatchTime = now
+        return true
+    }
 }

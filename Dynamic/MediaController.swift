@@ -35,6 +35,7 @@ final class MediaController: ObservableObject {
     private var lyrics: [TimedLyric] = []
     private var lyricsTrackID = ""
     private var consecutiveRefreshMisses = 0
+    private var scriptCache: [String: NSAppleScript] = [:]
 
     private init() {
         guard let defaults = UserDefaults(suiteName: LockscreenWidgetBridge.appGroup) else { return }
@@ -148,8 +149,17 @@ final class MediaController: ObservableObject {
     }
 
     private func run(_ source: String) -> String? {
+        let script: NSAppleScript
+        if let cached = scriptCache[source] {
+            script = cached
+        } else if let compiled = NSAppleScript(source: source) {
+            scriptCache[source] = compiled
+            script = compiled
+        } else {
+            return nil
+        }
         var error: NSDictionary?
-        let result = NSAppleScript(source: source)?.executeAndReturnError(&error).stringValue
+        let result = script.executeAndReturnError(&error).stringValue
         if let error {
             let number = error[NSAppleScript.errorNumber] as? Int ?? 0
             let message = error[NSAppleScript.errorMessage] as? String ?? "Unknown AppleScript error"

@@ -77,18 +77,22 @@ jobs:
 
       - name: Generate release notes
         run: |
-          previous_tag="$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)"
-          {
-            echo "# Dynamix $VERSION"
-            echo ""
-            if [[ -n "$previous_tag" ]]; then
-              echo "**Changes since $previous_tag:**"
+          if [[ -f RELEASE_NOTES.md ]]; then
+            sed "s/\$VERSION/$VERSION/g" RELEASE_NOTES.md > "$DIST_PATH/Dynamix-$VERSION.md"
+          else
+            previous_tag="$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)"
+            {
+              echo "# Dynamix $VERSION"
               echo ""
-              git log --oneline --no-decorate "$previous_tag..$GITHUB_REF_NAME"
-            else
-              echo "Initial release."
-            fi
-          } > "$DIST_PATH/Dynamix-$VERSION.md"
+              if [[ -n "$previous_tag" ]]; then
+                echo "**Changes since $previous_tag:**"
+                echo ""
+                git log --oneline --no-decorate "$previous_tag..$GITHUB_REF_NAME"
+              else
+                echo "Initial release."
+              fi
+            } > "$DIST_PATH/Dynamix-$VERSION.md"
+          fi
           cat "$DIST_PATH/Dynamix-$VERSION.md"
 
       - name: Generate signed appcast

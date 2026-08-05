@@ -95,17 +95,13 @@ final class OverlayController: NSObject, ObservableObject {
 
     func toggle() {
         guard !artworkExpanded else { return }
-        withAnimation(.interpolatingSpring(stiffness: 340, damping: 32)) {
-            expanded.toggle()
-        }
+        expanded.toggle()
         positionPanel(animated: true)
     }
 
     func toggleArtwork() {
-        withAnimation(.interpolatingSpring(stiffness: 340, damping: 32)) {
-            artworkExpanded.toggle()
-            expanded = artworkExpanded
-        }
+        artworkExpanded.toggle()
+        expanded = artworkExpanded
         positionPanel(animated: true)
     }
 
@@ -226,7 +222,9 @@ final class OverlayController: NSObject, ObservableObject {
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary]
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = false
-        panel.contentView = NSHostingView(rootView: IslandView(controller: self, media: .shared))
+        let hostingView = NSHostingView(rootView: IslandView(controller: self, media: .shared))
+        hostingView.autoresizingMask = [.width, .height]
+        panel.contentView = hostingView
         self.panel = panel
     }
 
@@ -240,14 +238,20 @@ final class OverlayController: NSObject, ObservableObject {
         let frame = screen.frame
         // The compact player stays entirely inside the menu-bar strip.
         let target = NSRect(x: frame.midX - size.width / 2, y: frame.maxY - size.height, width: size.width, height: size.height)
-        let update = { panel.setFrame(target, display: true) }
         if animated {
-            NSAnimationContext.runAnimationGroup {
-                $0.duration = 0.42
-                $0.timingFunction = CAMediaTimingFunction(controlPoints: 0.20, 0.88, 0.24, 1.0)
-                panel.animator().setFrame(target, display: true)
+            let capturedPanel = panel
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.38
+                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.34, 1.1, 0.64, 1)
+                capturedPanel.animator().setFrame(target, display: true)
+            } completionHandler: {
+                Task { @MainActor in
+                    capturedPanel.setFrame(target, display: true)
+                }
             }
-        } else { update() }
+        } else {
+            panel.setFrame(target, display: true)
+        }
     }
 
     private func estimatedExpandedHeight() -> CGFloat {
@@ -278,19 +282,23 @@ final class OverlayController: NSObject, ObservableObject {
 private struct IslandView: View {
     @ObservedObject var controller: OverlayController
     @ObservedObject var media: MediaController
-    @ObservedObject private var systemAudio = SystemAudioMonitor.shared
 
     var body: some View {
-        Group {
-            if let volume = controller.volumeHUD {
-                VolumeHUDView(state: volume)
-                    .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
-            } else {
-                mediaIsland
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+        ZStack {
+            Color.clear
+            Group {
+                if let volume = controller.volumeHUD {
+                    VolumeHUDView(state: volume)
+                        .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+                } else {
+                    mediaIsland
+                        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                }
             }
         }
-        .animation(.interpolatingSpring(stiffness: 360, damping: 34), value: controller.volumeHUD != nil)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeOut(duration: 0.18), value: controller.volumeHUD != nil)
+        .clipped()
     }
 
     @ViewBuilder private var mediaIsland: some View {
@@ -311,6 +319,8 @@ private struct IslandView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .padding(14)
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                .animation(.easeOut(duration: 0.16), value: controller.artworkExpanded)
             } else {
                 HStack(spacing: controlsOpen ? 10 : 7) {
                     Button(action: controller.toggleArtwork) { artwork(size: controlsOpen ? 32 : 21) }
@@ -330,7 +340,7 @@ private struct IslandView: View {
                 .offset(y: controlsOpen ? 0 : 1)
                 Spacer(minLength: 0)
                 if media.hasTrack {
-                    PlaybackWaveform(isPlaying: media.isPlaying, level: systemAudio.level, color: media.artworkTint)
+                    IsolatedWaveform(isPlaying: media.isPlaying, color: media.artworkTint)
                 }
             }
             .padding(.horizontal, controlsOpen ? 12 : 7)
@@ -357,17 +367,17 @@ private struct IslandView: View {
                     }
                     .padding(.bottom, 11)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                    .animation(.easeOut(duration: 0.18), value: controller.expanded)
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .foregroundStyle(.white)
         .background(.black.opacity(0.97), in: RoundedRectangle(cornerRadius: controller.expanded ? 20 : 18, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: controller.expanded ? 21 : 19, style: .continuous).stroke(.white.opacity(0.30), lineWidth: 0.5) }
         .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .onTapGesture { controller.toggle() }
         .onChange(of: media.currentLyric) { controller.lyricChanged() }
-        .animation(.interpolatingSpring(stiffness: 340, damping: 32), value: controller.expanded)
-        .animation(.interpolatingSpring(stiffness: 340, damping: 32), value: controller.artworkExpanded)
     }
 
     @ViewBuilder private func artwork(size: CGFloat) -> some View {
@@ -428,6 +438,18 @@ private struct VolumeHUDView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(state.isMuted ? "Muted" : "Volume \(Int((state.level * 100).rounded())) percent")
+    }
+}
+
+/// Observes the audio level itself so only the small waveform redraws at display
+/// refresh rate instead of the whole island.
+private struct IsolatedWaveform: View {
+    let isPlaying: Bool
+    let color: Color
+    @ObservedObject private var systemAudio = SystemAudioMonitor.shared
+
+    var body: some View {
+        PlaybackWaveform(isPlaying: isPlaying, level: systemAudio.level, color: color)
     }
 }
 
