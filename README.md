@@ -70,6 +70,36 @@ Dynamix requests only the permissions needed by enabled features:
 
 The core player continues to work if System Audio Recording is not granted, but the waveform will not react to playback.
 
+## Releases and Automatic Updates
+
+Release builds use [Sparkle 2](https://sparkle-project.org) for automatic updates. The GitHub Actions release workflow builds a universal app, applies ad-hoc signatures, creates a DMG, generates a cryptographically signed `appcast.xml`, and uploads both files to GitHub Releases. This release process does not require a paid Apple Developer membership.
+
+The workflow only requires this GitHub Actions secret:
+
+| Secret | Value |
+| --- | --- |
+| `SPARKLE_PRIVATE_KEY` | Sparkle EdDSA private key used to sign update archives |
+
+`SPARKLE_PRIVATE_KEY` is already associated with the public key embedded in this project. Keep both the GitHub secret and the `stawan15.Dynamic` keychain item backed up; changing or losing both keys can prevent existing installations from updating.
+
+To publish a release, create and push a semantic version tag:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The workflow sets `MARKETING_VERSION` from the tag and uses the GitHub Actions run number as the monotonically increasing build number. Do not reuse or move a published tag. The first Sparkle-enabled DMG establishes automatic updates; users of that build can then update to later releases from the menu bar or Sparkle's background checks.
+
+Because free releases cannot be signed with an Apple Developer ID or notarized, macOS will warn on the first installation. Drag `Dynamix.app` into Applications, try to open it, then allow it from **System Settings > Privacy & Security > Open Anyway**. If macOS does not show that option, remove the downloaded-file quarantine attribute manually:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Dynamix.app
+open /Applications/Dynamix.app
+```
+
+Sparkle updates are still protected by the EdDSA key embedded in the app. Gatekeeper will continue to identify the publisher as unknown, and the desktop widget or App Group sharing may be unavailable without Apple-issued distribution signing. The main menu bar app and automatic updates do not require the paid membership.
+
 ## Desktop Widget
 
 After running the signed app at least once:

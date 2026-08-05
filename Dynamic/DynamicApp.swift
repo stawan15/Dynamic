@@ -1,9 +1,15 @@
 import SwiftUI
+import Sparkle
 
 @main
 struct DynamicApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var media = MediaController.shared
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
 
     var body: some Scene {
         Settings {
@@ -11,7 +17,7 @@ struct DynamicApp: App {
         }
 
         MenuBarExtra {
-            MenuBarView(media: media)
+            MenuBarView(media: media, updater: updaterController.updater)
         } label: {
             Image(nsImage: DynamixIcons.tray)
         }

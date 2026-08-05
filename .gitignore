@@ -5,3 +5,7 @@ xcuserdata/
 DerivedData/
 build/
 *.xcuserstate
+
+# Release output and signing material
+dist/
+.release-secrets/

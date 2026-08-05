@@ -1,0 +1,107 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      DERIVED_DATA_PATH: ${{ runner.temp }}/DerivedData
+      PACKAGE_PATH: ${{ runner.temp }}/SourcePackages
+      DIST_PATH: ${{ github.workspace }}/dist
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Validate release version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Tag must use a semantic version such as v1.0.0" >&2
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Resolve packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project Dynamic.xcodeproj \
+            -scheme Dynamix \
+            -clonedSourcePackagesDirPath "$PACKAGE_PATH"
+
+      - name: Build unsigned app
+        run: |
+          xcodebuild build \
+            -project Dynamic.xcodeproj \
+            -scheme Dynamix \
+            -configuration Release \
+            -derivedDataPath "$DERIVED_DATA_PATH" \
+            -clonedSourcePackagesDirPath "$PACKAGE_PATH" \
+            CODE_SIGNING_ALLOWED=NO \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+
+      - name: Apply ad-hoc signatures
+        run: |
+          app_path="$DERIVED_DATA_PATH/Build/Products/Release/Dynamix.app"
+          widget_path="$app_path/Contents/PlugIns/DynamixLockscreenWidget.appex"
+          sparkle_path="$app_path/Contents/Frameworks/Sparkle.framework"
+          codesign --force --deep --sign - "$sparkle_path"
+          codesign --force --sign - \
+            --entitlements DynamixLockscreenWidget/DynamixLockscreenWidget.entitlements \
+            "$widget_path"
+          codesign --force --sign - \
+            --entitlements Dynamic/Dynamix.entitlements \
+            "$app_path"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+
+      - name: Create DMG
+        run: |
+          mkdir -p "$DIST_PATH"
+          dmg_path="$DIST_PATH/Dynamix-$VERSION.dmg"
+          scripts/create-dmg.sh \
+            "$DERIVED_DATA_PATH/Build/Products/Release/Dynamix.app" \
+            "$dmg_path"
+
+      - name: Generate signed appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          sparkle_bin="$PACKAGE_PATH/artifacts/sparkle/Sparkle/bin"
+          echo "$SPARKLE_PRIVATE_KEY" | "$sparkle_bin/generate_appcast" \
+            --ed-key-file - \
+            --download-url-prefix "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/" \
+            --maximum-deltas 0 \
+            --link "https://github.com/$GITHUB_REPOSITORY" \
+            -o "$DIST_PATH/appcast.xml" \
+            "$DIST_PATH"
+
+      - name: Verify release artifacts
+        run: |
+          codesign --verify --deep --strict --verbose=2 \
+            "$DERIVED_DATA_PATH/Build/Products/Release/Dynamix.app"
+          test -s "$DIST_PATH/appcast.xml"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "$DIST_PATH/Dynamix-$VERSION.dmg" \
+            "$DIST_PATH/appcast.xml" \
+            --title "Dynamix $VERSION" \
+            --generate-notes \
+            --verify-tag \
+            --latest

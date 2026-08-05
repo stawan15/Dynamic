@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import Sparkle
 
 fileprivate struct VolumeHUDState {
     let level: CGFloat
@@ -335,6 +336,8 @@ private struct PlaybackWaveform: View {
 
 struct MenuBarView: View {
     @ObservedObject var media: MediaController
+    let updater: SPUUpdater
+
     var body: some View {
         Text(media.hasTrack ? "\(media.title) — \(media.artist)" : "No media playing")
         Divider()
@@ -345,7 +348,32 @@ struct MenuBarView: View {
         SettingsLink {
             Text("Settings…")
         }
+        CheckForUpdatesView(updater: updater)
         Divider()
         Button("Quit Dynamix") { NSApplication.shared.terminate(nil) }
+    }
+}
+
+private final class CheckForUpdatesViewModel: ObservableObject {
+    @Published var canCheckForUpdates = false
+
+    init(updater: SPUUpdater) {
+        updater.publisher(for: \.canCheckForUpdates)
+            .assign(to: &$canCheckForUpdates)
+    }
+}
+
+private struct CheckForUpdatesView: View {
+    @ObservedObject private var viewModel: CheckForUpdatesViewModel
+    private let updater: SPUUpdater
+
+    init(updater: SPUUpdater) {
+        self.updater = updater
+        viewModel = CheckForUpdatesViewModel(updater: updater)
+    }
+
+    var body: some View {
+        Button("Check for Updates…", action: updater.checkForUpdates)
+            .disabled(!viewModel.canCheckForUpdates)
     }
 }

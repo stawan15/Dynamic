@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A10100000000000000000005 /* DynamixLockscreenWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A10100000000000000000001 /* DynamixLockscreenWidget.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		B20100000000000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = B20100000000000000000003 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -40,6 +41,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		B20100000000000000000004 /* Exceptions for "Dynamic" folder in "Dynamic" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 776F4BD8301E008800F8A582 /* Dynamic */;
+		};
 		A10100000000000000000016 /* Exceptions for "DynamixLockscreenWidget" folder in "DynamixLockscreenWidget" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -52,6 +60,9 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		776F4BDB301E008800F8A582 /* Dynamic */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				B20100000000000000000004 /* Exceptions for "Dynamic" folder in "Dynamic" target */,
+			);
 			path = Dynamic;
 			sourceTree = "<group>";
 		};
@@ -70,6 +81,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B20100000000000000000001 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -123,6 +135,7 @@
 			);
 			name = Dynamic;
 			packageProductDependencies = (
+				B20100000000000000000003 /* Sparkle */,
 			);
 			productName = Dynamic;
 			productReference = 776F4BD9301E008800F8A582 /* Dynamix.app */;
@@ -179,6 +192,9 @@
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 776F4BDA301E008800F8A582 /* Products */;
+			packageReferences = (
+				B20100000000000000000002 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -355,12 +371,16 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = QJXW7BF52X;
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Dynamic/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Dynamic uses Automation to show and control Spotify or Apple Music playback.";
 				INFOPLIST_KEY_NSAudioCaptureUsageDescription = "Dynamic uses system audio only to animate the Now Playing waveform.";
+				INFOPLIST_KEY_SUFeedURL = "https://github.com/stawan15/Dynamic/releases/latest/download/appcast.xml";
+				INFOPLIST_KEY_SUPublicEDKey = "nkZTEtIT1miXFYUvn/NinL0RdckIUQuMYHd5hPTrVbc=";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -400,12 +420,16 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = QJXW7BF52X;
 				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Dynamic/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Dynamic uses Automation to show and control Spotify or Apple Music playback.";
 				INFOPLIST_KEY_NSAudioCaptureUsageDescription = "Dynamic uses system audio only to animate the Now Playing waveform.";
+				INFOPLIST_KEY_SUFeedURL = "https://github.com/stawan15/Dynamic/releases/latest/download/appcast.xml";
+				INFOPLIST_KEY_SUPublicEDKey = "nkZTEtIT1miXFYUvn/NinL0RdckIUQuMYHd5hPTrVbc=";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -474,6 +498,25 @@
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		B20100000000000000000002 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 2.9.5;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B20100000000000000000003 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B20100000000000000000002 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCConfigurationList section */
 		776F4BD4301E008800F8A582 /* Build configuration list for PBXProject "Dynamic" */ = {
